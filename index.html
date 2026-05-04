@@ -33,8 +33,8 @@
             // 1. PASTE YOUR API KEY HERE
             apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", 
             
-            // 2. STABLE API CONFIG
-            apiVersion: "v1", // Switched from v1beta
+            // 2. API CONFIG (Using v1beta for systemInstruction support)
+            endpoint: "v1beta",
             model: "gemini-1.5-flash",
 
             writing: {
@@ -82,26 +82,51 @@
                 const key = (MASTER_CONFIG.apiKey || "").trim();
                 if (!key) throw new Error("MISSING_API_KEY");
 
-                // Using v1 endpoint which is more stable for gemini-1.5-flash
-                const url = `https://generativelanguage.googleapis.com/${MASTER_CONFIG.apiVersion}/models/${MASTER_CONFIG.model}:generateContent?key=${key}`;
+                // Constructing the URL specifically for v1beta which supports systemInstruction
+                const url = `https://generativelanguage.googleapis.com/${MASTER_CONFIG.endpoint}/models/${MASTER_CONFIG.model}:generateContent?key=${key}`;
 
                 const contents = [
-                    ...messages.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })),
+                    ...messages.map(m => ({ 
+                        role: m.role === 'ai' ? 'model' : 'user', 
+                        parts: [{ text: m.text }] 
+                    })),
                     { role: 'user', parts: [{ text: userMessage }] }
                 ];
+
+                const payload = {
+                    contents: contents,
+                    systemInstruction: {
+                        parts: [{ text: MASTER_CONFIG[mission].prompt }]
+                    }
+                };
 
                 const response = await fetch(url, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents,
-                        systemInstruction: { parts: [{ text: MASTER_CONFIG[mission].prompt }] }
-                    })
+                    body: JSON.stringify(payload)
                 });
                 
                 const data = await response.json();
                 
                 if (!response.ok) {
+                    // Fallback: If systemInstruction is rejected, try including it in the content
+                    if (data.error?.message?.includes('systemInstruction')) {
+                        const fallbackPayload = {
+                            contents: [
+                                { role: 'user', parts: [{ text: `INSTRUCTIONS: ${MASTER_CONFIG[mission].prompt}` }] },
+                                { role: 'model', parts: [{ text: "I understand. I will act as Elif's Elite Coach with these strict rules." }] },
+                                ...contents
+                            ]
+                        };
+                        const retryResponse = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify(fallbackPayload)
+                        });
+                        const retryData = await retryResponse.json();
+                        if (!retryResponse.ok) throw new Error(retryData.error?.message || "Retry failed");
+                        return retryData.candidates[0].content.parts[0].text;
+                    }
                     throw new Error(data.error?.message || `Error ${response.status}`);
                 }
                 
@@ -165,7 +190,7 @@
                         <button onClick={() => setMission(null)} className="text-zinc-600 hover:text-white p-2"><i data-lucide="rotate-ccw" className="w-5 h-5"></i></button>
                         <div className="text-center">
                             <h1 className="text-[10px] font-black uppercase tracking-widest italic">{mission === 'writing' ? 'Writing Mastery' : 'Math Sprint'}</h1>
-                            <span className="text-[8px] text-emerald-500 font-bold uppercase tracking-widest">Engine Live</span>
+                            <span className="text-[8px] text-emerald-500 font-bold uppercase tracking-widest">Engine Active</span>
                         </div>
                         <div className="w-10" />
                     </header>
