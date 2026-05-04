@@ -1,0 +1,191 @@
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Elite Scholar Mentor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        body { background-color: #0c0c0e; color: #e4e4e7; font-family: ui-sans-serif, system-ui, sans-serif; overflow: hidden; }
+        .scroll-hide::-webkit-scrollbar { display: none; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        /**
+         * ==========================================
+         * MASTER CONFIG - EDIT THIS TO UPDATE RULES
+         * ==========================================
+         */
+        const MASTER_CONFIG = {
+            apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", // PASTE YOUR KEY FROM AI STUDIO HERE
+            
+            writing: {
+                title: "Wild River (Rodman Philbrick)",
+                prompt: `You are Elif’s Ivy League Writing Coach. 
+                - Focus ONLY on 'Wild River'. NO graphic novels.
+                - REJECT answers < 15 words as 'coasting'. 
+                - MANDATORY: Restate the question and provide a 'because' statement.
+                - CODE: Give [ADJECTIVE-ANIMAL-NUMBER] only after a perfect 5-sentence analysis.`
+            },
+            
+            math: {
+                title: "Math Sprint: Fractions & Patterns",
+                prompt: `You are Elif’s Elite Math Sensei. 
+                - Focus: Mixed/Equivalent fractions and Multiplication patterns.
+                - Task: Give 2 multiplication patterns to solve, then 1 fraction comparison.
+                - Rule: Require full steps to be shown.
+                - CODE: Give [MATH-HERO-NUMBER] only after 10 correct answers in a row.`
+            }
+        };
+
+        const App = () => {
+            const [mission, setMission] = useState(null);
+            const [messages, setMessages] = useState([]);
+            const [input, setInput] = useState('');
+            const [isLoading, setIsLoading] = useState(false);
+            const chatEndRef = useRef(null);
+
+            useEffect(() => {
+                chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+            }, [messages, isLoading]);
+
+            const startMission = (type) => {
+                setMission(type);
+                const welcome = type === 'writing' 
+                    ? `Writing Mission Active: ${MASTER_CONFIG.writing.title}. I have your Secret Code ready. Which chapter did you finish?`
+                    : `Math Mission Active. Ready for your first set of problems?`;
+                setMessages([{ role: 'ai', text: welcome }]);
+                setTimeout(() => lucide.createIcons(), 100);
+            };
+
+            const callGemini = async (userMessage) => {
+                const key = MASTER_CONFIG.apiKey || (window.__api_key || "");
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+
+                const contents = [
+                    ...messages.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })),
+                    { role: 'user', parts: [{ text: userMessage }] }
+                ];
+
+                try {
+                    const response = await fetch(url, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            contents,
+                            systemInstruction: { parts: [{ text: MASTER_CONFIG[mission].prompt }] }
+                        })
+                    });
+                    const data = await response.json();
+                    return data.candidates[0].content.parts[0].text;
+                } catch (e) {
+                    return "Connection Error: Check API Key/Internet.";
+                }
+            };
+
+            const handleSend = async () => {
+                if (!input.trim() || isLoading) return;
+                const text = input;
+                setInput('');
+                setMessages(prev => [...prev, { role: 'user', text }]);
+                setIsLoading(true);
+                const res = await callGemini(text);
+                setMessages(prev => [...prev, { role: 'ai', text: res }]);
+                setIsLoading(false);
+            };
+
+            if (!mission) {
+                return (
+                    <div className="h-screen bg-black flex items-center justify-center p-6 text-white font-sans animate-fade-in">
+                        <div className="max-w-xs w-full text-center space-y-10">
+                            <div className="bg-indigo-600 w-20 h-20 rounded-3xl shadow-2xl flex items-center justify-center mx-auto mb-6">
+                                <i data-lucide="graduation-cap" className="w-10 h-10"></i>
+                            </div>
+                            <div className="space-y-2">
+                                <h1 className="text-3xl font-black uppercase italic tracking-tighter">Scholar Command</h1>
+                                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-[0.3em]">Select Daily Quest</p>
+                            </div>
+                            <div className="space-y-4">
+                                <button onClick={() => startMission('writing')} className="w-full bg-zinc-900 p-6 rounded-3xl flex justify-between items-center border border-zinc-800 hover:border-indigo-500 transition-all active:scale-95 group">
+                                    <div className="flex items-center gap-4">
+                                        <div className="bg-zinc-800 p-2 rounded-xl group-hover:bg-indigo-600 transition-colors"><i data-lucide="book-open" className="w-5 h-5"></i></div>
+                                        <div className="text-left"><p className="font-black uppercase text-sm italic">Writing Quest</p></div>
+                                    </div>
+                                    <i data-lucide="chevron-right" className="w-5 h-5 text-zinc-600"></i>
+                                </button>
+                                <button onClick={() => startMission('math')} className="w-full bg-zinc-900 p-6 rounded-3xl flex justify-between items-center border border-zinc-800 hover:border-emerald-500 transition-all active:scale-95 group">
+                                    <div className="flex items-center gap-4">
+                                        <div className="bg-zinc-800 p-2 rounded-xl group-hover:bg-emerald-600 transition-colors"><i data-lucide="calculator" className="w-5 h-5"></i></div>
+                                        <div className="text-left"><p className="font-black uppercase text-sm italic">Math Sprint</p></div>
+                                    </div>
+                                    <i data-lucide="chevron-right" className="w-5 h-5 text-zinc-600"></i>
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                );
+            }
+
+            return (
+                <div className="flex flex-col h-screen max-w-md mx-auto border-x border-zinc-900 bg-black animate-fade-in">
+                    <header className="p-4 border-b border-zinc-900 bg-zinc-950 flex justify-between items-center shrink-0">
+                        <button onClick={() => setMission(null)} className="text-zinc-600 hover:text-white"><i data-lucide="rotate-ccw" className="w-5 h-5"></i></button>
+                        <div className="text-center">
+                            <h1 className="text-[10px] font-black uppercase tracking-widest italic">{mission === 'writing' ? 'Writing Mastery' : 'Math Sprint'}</h1>
+                            <span className="text-[8px] text-emerald-500 font-bold uppercase tracking-widest">Engine Active</span>
+                        </div>
+                        <div className="w-5" />
+                    </header>
+                    <main className="flex-grow overflow-y-auto p-4 space-y-6 scroll-hide bg-gradient-to-b from-zinc-950 to-black">
+                        {messages.map((msg, idx) => (
+                            <div key={idx} className={`flex gap-3 max-w-[90%] animate-fade-in ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}>
+                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-1 shadow-lg ${msg.role === 'ai' ? (mission === 'writing' ? 'bg-indigo-600' : 'bg-emerald-600') : 'bg-zinc-800'}`}>
+                                    {msg.role === 'ai' ? <i data-lucide="shield-check" className="w-4 h-4 text-white"></i> : <i data-lucide="user" className="w-4 h-4 text-white"></i>}
+                                </div>
+                                <div className={`p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-tl-none shadow-md'}`}>
+                                    {msg.text.split('\n').map((t, i) => <p key={i} className="mb-2 last:mb-0">{t}</p>)}
+                                </div>
+                            </div>
+                        ))}
+                        {isLoading && <div className="flex gap-1.5 p-4 items-center"><div className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce"></div><div className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div></div>}
+                        <div ref={chatEndRef} />
+                    </main>
+                    <footer className="p-4 bg-zinc-950 border-t border-zinc-900 shrink-0">
+                        <div className="flex gap-2 items-center bg-zinc-900 rounded-2xl p-2 border border-zinc-800 focus-within:border-indigo-500 transition-all">
+                            <textarea 
+                                className="flex-grow bg-transparent border-none focus:ring-0 text-sm p-2 h-10 resize-none placeholder-zinc-700" 
+                                placeholder={mission === 'writing' ? "Analyze text..." : "Submit solution..."} 
+                                value={input} 
+                                onChange={(e) => setInput(e.target.value)} 
+                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
+                            />
+                            <button onClick={handleSend} disabled={isLoading || !input.trim()} className="bg-indigo-600 hover:bg-indigo-700 p-2.5 rounded-xl active:scale-95 shadow-lg">
+                                <i data-lucide="send" className="w-5 h-5 text-white"></i>
+                            </button>
+                        </div>
+                    </footer>
+                </div>
+            );
+        };
+
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+        setTimeout(() => lucide.createIcons(), 500);
+    </script>
+</body>
+</html>
+
+```
+
