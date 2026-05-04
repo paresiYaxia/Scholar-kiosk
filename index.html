@@ -30,16 +30,17 @@
          * ==========================================
          */
         const MASTER_CONFIG = {
-            // 1. PASTE YOUR API KEY HERE FROM AI STUDIO
+            // 1. PASTE YOUR API KEY HERE
             apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", 
             
-            // 2. STABLE MODEL FOR PUBLIC WEB USE
+            // 2. STABLE API CONFIG
+            apiVersion: "v1", // Switched from v1beta
             model: "gemini-1.5-flash",
 
             writing: {
                 title: "Wild River (Rodman Philbrick)",
                 prompt: `You are Elif’s Ivy League Writing Coach. 
-                - Focus ONLY on 'Wild River'. NO graphic novels.
+                - Focus ONLY on 'Wild River'. 
                 - REJECT answers < 15 words as 'coasting'. 
                 - MANDATORY: Restate the question and provide a 'because' statement.
                 - CODE: Give [ADJECTIVE-ANIMAL-NUMBER] only after a perfect 5-sentence analysis.`
@@ -49,7 +50,7 @@
                 title: "Math Sprint: Fractions & Patterns",
                 prompt: `You are Elif’s Elite Math Sensei. 
                 - Focus: Mixed/Equivalent fractions and Multiplication patterns.
-                - Task: Give 2 multiplication patterns to solve, then 1 fraction comparison.
+                - Task: Give 2 multiplication patterns, then 1 fraction comparison.
                 - Rule: Require full steps to be shown.
                 - CODE: Give [MATH-HERO-NUMBER] only after 10 correct answers in a row.`
             }
@@ -60,7 +61,7 @@
             const [messages, setMessages] = useState([]);
             const [input, setInput] = useState('');
             const [isLoading, setIsLoading] = useState(false);
-            const [error, setError] = useState(null);
+            const [debugInfo, setDebugInfo] = useState(null);
             const chatEndRef = useRef(null);
 
             useEffect(() => {
@@ -69,7 +70,7 @@
 
             const startMission = (type) => {
                 setMission(type);
-                setError(null);
+                setDebugInfo(null);
                 const welcome = type === 'writing' 
                     ? `Writing Mission Active: ${MASTER_CONFIG.writing.title}. I have your Secret Code ready. Which chapter did you finish?`
                     : `Math Mission Active. Ready for your first set of problems?`;
@@ -78,10 +79,11 @@
             };
 
             const callGemini = async (userMessage) => {
-                const key = MASTER_CONFIG.apiKey.trim();
-                if (!key) throw new Error("No API Key found. Please add your key to index.html");
+                const key = (MASTER_CONFIG.apiKey || "").trim();
+                if (!key) throw new Error("MISSING_API_KEY");
 
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/${MASTER_CONFIG.model}:generateContent?key=${key}`;
+                // Using v1 endpoint which is more stable for gemini-1.5-flash
+                const url = `https://generativelanguage.googleapis.com/${MASTER_CONFIG.apiVersion}/models/${MASTER_CONFIG.model}:generateContent?key=${key}`;
 
                 const contents = [
                     ...messages.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })),
@@ -97,12 +99,12 @@
                     })
                 });
                 
+                const data = await response.json();
+                
                 if (!response.ok) {
-                    const errorData = await response.json();
-                    throw new Error(errorData.error?.message || `API Error: ${response.status}`);
+                    throw new Error(data.error?.message || `Error ${response.status}`);
                 }
                 
-                const data = await response.json();
                 return data.candidates[0].content.parts[0].text;
             };
 
@@ -110,7 +112,7 @@
                 if (!input.trim() || isLoading) return;
                 const text = input;
                 setInput('');
-                setError(null);
+                setDebugInfo(null);
                 setMessages(prev => [...prev, { role: 'user', text }]);
                 setIsLoading(true);
 
@@ -118,8 +120,7 @@
                     const res = await callGemini(text);
                     setMessages(prev => [...prev, { role: 'ai', text: res }]);
                 } catch (e) {
-                    setError(e.message || "Engine connection error.");
-                    console.error("Scholar Kiosk Debug:", e);
+                    setDebugInfo(e.message);
                 } finally {
                     setIsLoading(false);
                     setTimeout(() => lucide.createIcons(), 100);
@@ -153,9 +154,6 @@
                                     <i data-lucide="chevron-right" className="w-5 h-5 text-zinc-600"></i>
                                 </button>
                             </div>
-                            {!MASTER_CONFIG.apiKey && (
-                                <p className="text-rose-500 text-[10px] font-bold uppercase animate-pulse">API Key Missing in index.html</p>
-                            )}
                         </div>
                     </div>
                 );
@@ -167,7 +165,7 @@
                         <button onClick={() => setMission(null)} className="text-zinc-600 hover:text-white p-2"><i data-lucide="rotate-ccw" className="w-5 h-5"></i></button>
                         <div className="text-center">
                             <h1 className="text-[10px] font-black uppercase tracking-widest italic">{mission === 'writing' ? 'Writing Mastery' : 'Math Sprint'}</h1>
-                            <span className="text-[8px] text-emerald-500 font-bold uppercase tracking-widest">Engine Active</span>
+                            <span className="text-[8px] text-emerald-500 font-bold uppercase tracking-widest">Engine Live</span>
                         </div>
                         <div className="w-10" />
                     </header>
@@ -183,6 +181,7 @@
                                 </div>
                             </div>
                         ))}
+                        
                         {isLoading && (
                             <div className="flex gap-1.5 p-4 items-center">
                                 <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce"></div>
@@ -190,11 +189,11 @@
                                 <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
                             </div>
                         )}
-                        {error && (
-                            <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-500 text-[10px] text-center animate-fade-in mx-4 space-y-2">
-                                <p className="font-black uppercase tracking-widest">Connection Error</p>
-                                <p className="font-medium lowercase opacity-80">{error}</p>
-                                <p className="text-[8px] text-slate-500 font-bold uppercase pt-2 italic underline">Check your API key in the index.html file</p>
+
+                        {debugInfo && (
+                            <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl animate-fade-in mx-2">
+                                <p className="text-[10px] font-black uppercase text-rose-500 mb-1">Engine Error</p>
+                                <p className="text-[11px] text-white font-mono break-words">{debugInfo}</p>
                             </div>
                         )}
                         <div ref={chatEndRef} />
