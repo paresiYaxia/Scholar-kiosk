@@ -33,8 +33,7 @@
             // 1. PASTE YOUR API KEY HERE
             apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", 
             
-            // 2. API CONFIG (Using v1beta for systemInstruction support)
-            endpoint: "v1beta",
+            // 2. PRIMARY MODEL (App will auto-try others if this fails)
             model: "gemini-1.5-flash",
 
             writing: {
@@ -82,55 +81,57 @@
                 const key = (MASTER_CONFIG.apiKey || "").trim();
                 if (!key) throw new Error("MISSING_API_KEY");
 
-                // Constructing the URL specifically for v1beta which supports systemInstruction
-                const url = `https://generativelanguage.googleapis.com/${MASTER_CONFIG.endpoint}/models/${MASTER_CONFIG.model}:generateContent?key=${key}`;
-
-                const contents = [
-                    ...messages.map(m => ({ 
-                        role: m.role === 'ai' ? 'model' : 'user', 
-                        parts: [{ text: m.text }] 
-                    })),
-                    { role: 'user', parts: [{ text: userMessage }] }
-                ];
-
-                const payload = {
-                    contents: contents,
-                    systemInstruction: {
-                        parts: [{ text: MASTER_CONFIG[mission].prompt }]
-                    }
-                };
-
-                const response = await fetch(url, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(payload)
-                });
+                // We try v1beta first as it supports systemInstruction more reliably
+                const endpoint = "v1beta";
                 
-                const data = await response.json();
-                
-                if (!response.ok) {
-                    // Fallback: If systemInstruction is rejected, try including it in the content
-                    if (data.error?.message?.includes('systemInstruction')) {
-                        const fallbackPayload = {
-                            contents: [
-                                { role: 'user', parts: [{ text: `INSTRUCTIONS: ${MASTER_CONFIG[mission].prompt}` }] },
-                                { role: 'model', parts: [{ text: "I understand. I will act as Elif's Elite Coach with these strict rules." }] },
-                                ...contents
-                            ]
+                // We will try these models in order if one fails
+                const modelsToTry = [MASTER_CONFIG.model, "gemini-1.5-flash-latest", "gemini-pro"];
+                let lastError = "";
+
+                for (let modelName of modelsToTry) {
+                    try {
+                        const url = `https://generativelanguage.googleapis.com/${endpoint}/models/${modelName}:generateContent?key=${key}`;
+                        
+                        const contents = [
+                            ...messages.map(m => ({ 
+                                role: m.role === 'ai' ? 'model' : 'user', 
+                                parts: [{ text: m.text }] 
+                            })),
+                            { role: 'user', parts: [{ text: userMessage }] }
+                        ];
+
+                        const payload = {
+                            contents: contents,
+                            systemInstruction: {
+                                parts: [{ text: MASTER_CONFIG[mission].prompt }]
+                            }
                         };
-                        const retryResponse = await fetch(url, {
+
+                        const response = await fetch(url, {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(fallbackPayload)
+                            body: JSON.stringify(payload)
                         });
-                        const retryData = await retryResponse.json();
-                        if (!retryResponse.ok) throw new Error(retryData.error?.message || "Retry failed");
-                        return retryData.candidates[0].content.parts[0].text;
+                        
+                        const data = await response.json();
+                        
+                        if (response.ok) {
+                            return data.candidates[0].content.parts[0].text;
+                        } else {
+                            // If it's a model not found error, we continue to the next model in the loop
+                            if (data.error?.message?.includes('not found')) {
+                                lastError = `Model ${modelName} not found. Trying next...`;
+                                continue;
+                            }
+                            throw new Error(data.error?.message || `Error ${response.status}`);
+                        }
+                    } catch (e) {
+                        lastError = e.message;
+                        if (e.message.includes("MISSING_API_KEY")) throw e;
                     }
-                    throw new Error(data.error?.message || `Error ${response.status}`);
                 }
                 
-                return data.candidates[0].content.parts[0].text;
+                throw new Error(`Connection Failed. Final error: ${lastError}`);
             };
 
             const handleSend = async () => {
