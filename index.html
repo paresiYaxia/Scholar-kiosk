@@ -1,3 +1,4 @@
+```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -25,12 +26,16 @@
 
         /**
          * ==========================================
-         * MASTER CONFIG - EDIT THIS TO UPDATE RULES
+         * MASTER CONFIG - EDIT THIS ON GITHUB
          * ==========================================
          */
         const MASTER_CONFIG = {
-            apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", // Your provided key
+            // 1. PASTE YOUR API KEY HERE FROM AI STUDIO
+            apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", 
             
+            // 2. STABLE MODEL FOR PUBLIC WEB USE
+            model: "gemini-1.5-flash",
+
             writing: {
                 title: "Wild River (Rodman Philbrick)",
                 prompt: `You are Elif’s Ivy League Writing Coach. 
@@ -69,43 +74,36 @@
                     ? `Writing Mission Active: ${MASTER_CONFIG.writing.title}. I have your Secret Code ready. Which chapter did you finish?`
                     : `Math Mission Active. Ready for your first set of problems?`;
                 setMessages([{ role: 'ai', text: welcome }]);
-                // Trigger icon refresh
                 setTimeout(() => lucide.createIcons(), 100);
             };
 
             const callGemini = async (userMessage) => {
-                const key = MASTER_CONFIG.apiKey;
-                const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
+                const key = MASTER_CONFIG.apiKey.trim();
+                if (!key) throw new Error("No API Key found. Please add your key to index.html");
+
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${MASTER_CONFIG.model}:generateContent?key=${key}`;
 
                 const contents = [
                     ...messages.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: m.text }] })),
                     { role: 'user', parts: [{ text: userMessage }] }
                 ];
 
-                // Exponential Backoff for API stability
-                for (let i = 0; i < 3; i++) {
-                    try {
-                        const response = await fetch(url, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                contents,
-                                systemInstruction: { parts: [{ text: MASTER_CONFIG[mission].prompt }] }
-                            })
-                        });
-                        
-                        if (!response.ok) {
-                            const errorData = await response.json();
-                            throw new Error(errorData.error?.message || "API Error");
-                        }
-                        
-                        const data = await response.json();
-                        return data.candidates[0].content.parts[0].text;
-                    } catch (e) {
-                        if (i === 2) throw e;
-                        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
-                    }
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        contents,
+                        systemInstruction: { parts: [{ text: MASTER_CONFIG[mission].prompt }] }
+                    })
+                });
+                
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error?.message || `API Error: ${response.status}`);
                 }
+                
+                const data = await response.json();
+                return data.candidates[0].content.parts[0].text;
             };
 
             const handleSend = async () => {
@@ -120,8 +118,8 @@
                     const res = await callGemini(text);
                     setMessages(prev => [...prev, { role: 'ai', text: res }]);
                 } catch (e) {
-                    setError("Engine connection error. Please notify your Dad.");
-                    console.error(e);
+                    setError(e.message || "Engine connection error.");
+                    console.error("Scholar Kiosk Debug:", e);
                 } finally {
                     setIsLoading(false);
                     setTimeout(() => lucide.createIcons(), 100);
@@ -155,6 +153,9 @@
                                     <i data-lucide="chevron-right" className="w-5 h-5 text-zinc-600"></i>
                                 </button>
                             </div>
+                            {!MASTER_CONFIG.apiKey && (
+                                <p className="text-rose-500 text-[10px] font-bold uppercase animate-pulse">API Key Missing in index.html</p>
+                            )}
                         </div>
                     </div>
                 );
@@ -190,8 +191,10 @@
                             </div>
                         )}
                         {error && (
-                            <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl text-rose-500 text-xs text-center animate-fade-in mx-4">
-                                {error}
+                            <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl text-rose-500 text-[10px] text-center animate-fade-in mx-4 space-y-2">
+                                <p className="font-black uppercase tracking-widest">Connection Error</p>
+                                <p className="font-medium lowercase opacity-80">{error}</p>
+                                <p className="text-[8px] text-slate-500 font-bold uppercase pt-2 italic underline">Check your API key in the index.html file</p>
                             </div>
                         )}
                         <div ref={chatEndRef} />
@@ -222,8 +225,9 @@
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
         
-        // Initial icon render
         setTimeout(() => lucide.createIcons(), 500);
     </script>
 </body>
 </html>
+
+```
