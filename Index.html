@@ -1,4 +1,3 @@
-```html
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -11,10 +10,11 @@
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
-        body { background-color: #0c0c0e; color: #e4e4e7; font-family: ui-sans-serif, system-ui, sans-serif; overflow: hidden; }
+        body { background-color: #0c0c0e; color: #e4e4e7; font-family: ui-sans-serif, system-ui, sans-serif; overflow: hidden; -webkit-tap-highlight-color: transparent; }
         .scroll-hide::-webkit-scrollbar { display: none; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
+        textarea { caret-color: #6366f1; }
     </style>
 </head>
 <body>
@@ -29,7 +29,7 @@
          * ==========================================
          */
         const MASTER_CONFIG = {
-            apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", // PASTE YOUR KEY FROM AI STUDIO HERE
+            apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", // Your provided key
             
             writing: {
                 title: "Wild River (Rodman Philbrick)",
@@ -55,6 +55,7 @@
             const [messages, setMessages] = useState([]);
             const [input, setInput] = useState('');
             const [isLoading, setIsLoading] = useState(false);
+            const [error, setError] = useState(null);
             const chatEndRef = useRef(null);
 
             useEffect(() => {
@@ -63,15 +64,17 @@
 
             const startMission = (type) => {
                 setMission(type);
+                setError(null);
                 const welcome = type === 'writing' 
                     ? `Writing Mission Active: ${MASTER_CONFIG.writing.title}. I have your Secret Code ready. Which chapter did you finish?`
                     : `Math Mission Active. Ready for your first set of problems?`;
                 setMessages([{ role: 'ai', text: welcome }]);
+                // Trigger icon refresh
                 setTimeout(() => lucide.createIcons(), 100);
             };
 
             const callGemini = async (userMessage) => {
-                const key = MASTER_CONFIG.apiKey || (window.__api_key || "");
+                const key = MASTER_CONFIG.apiKey;
                 const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${key}`;
 
                 const contents = [
@@ -79,19 +82,29 @@
                     { role: 'user', parts: [{ text: userMessage }] }
                 ];
 
-                try {
-                    const response = await fetch(url, {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({
-                            contents,
-                            systemInstruction: { parts: [{ text: MASTER_CONFIG[mission].prompt }] }
-                        })
-                    });
-                    const data = await response.json();
-                    return data.candidates[0].content.parts[0].text;
-                } catch (e) {
-                    return "Connection Error: Check API Key/Internet.";
+                // Exponential Backoff for API stability
+                for (let i = 0; i < 3; i++) {
+                    try {
+                        const response = await fetch(url, {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                contents,
+                                systemInstruction: { parts: [{ text: MASTER_CONFIG[mission].prompt }] }
+                            })
+                        });
+                        
+                        if (!response.ok) {
+                            const errorData = await response.json();
+                            throw new Error(errorData.error?.message || "API Error");
+                        }
+                        
+                        const data = await response.json();
+                        return data.candidates[0].content.parts[0].text;
+                    } catch (e) {
+                        if (i === 2) throw e;
+                        await new Promise(r => setTimeout(r, Math.pow(2, i) * 1000));
+                    }
                 }
             };
 
@@ -99,11 +112,20 @@
                 if (!input.trim() || isLoading) return;
                 const text = input;
                 setInput('');
+                setError(null);
                 setMessages(prev => [...prev, { role: 'user', text }]);
                 setIsLoading(true);
-                const res = await callGemini(text);
-                setMessages(prev => [...prev, { role: 'ai', text: res }]);
-                setIsLoading(false);
+
+                try {
+                    const res = await callGemini(text);
+                    setMessages(prev => [...prev, { role: 'ai', text: res }]);
+                } catch (e) {
+                    setError("Engine connection error. Please notify your Dad.");
+                    console.error(e);
+                } finally {
+                    setIsLoading(false);
+                    setTimeout(() => lucide.createIcons(), 100);
+                }
             };
 
             if (!mission) {
@@ -141,37 +163,54 @@
             return (
                 <div className="flex flex-col h-screen max-w-md mx-auto border-x border-zinc-900 bg-black animate-fade-in">
                     <header className="p-4 border-b border-zinc-900 bg-zinc-950 flex justify-between items-center shrink-0">
-                        <button onClick={() => setMission(null)} className="text-zinc-600 hover:text-white"><i data-lucide="rotate-ccw" className="w-5 h-5"></i></button>
+                        <button onClick={() => setMission(null)} className="text-zinc-600 hover:text-white p-2"><i data-lucide="rotate-ccw" className="w-5 h-5"></i></button>
                         <div className="text-center">
                             <h1 className="text-[10px] font-black uppercase tracking-widest italic">{mission === 'writing' ? 'Writing Mastery' : 'Math Sprint'}</h1>
                             <span className="text-[8px] text-emerald-500 font-bold uppercase tracking-widest">Engine Active</span>
                         </div>
-                        <div className="w-5" />
+                        <div className="w-10" />
                     </header>
+
                     <main className="flex-grow overflow-y-auto p-4 space-y-6 scroll-hide bg-gradient-to-b from-zinc-950 to-black">
                         {messages.map((msg, idx) => (
                             <div key={idx} className={`flex gap-3 max-w-[90%] animate-fade-in ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}>
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-1 shadow-lg ${msg.role === 'ai' ? (mission === 'writing' ? 'bg-indigo-600' : 'bg-emerald-600') : 'bg-zinc-800'}`}>
                                     {msg.role === 'ai' ? <i data-lucide="shield-check" className="w-4 h-4 text-white"></i> : <i data-lucide="user" className="w-4 h-4 text-white"></i>}
                                 </div>
-                                <div className={`p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none' : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-tl-none shadow-md'}`}>
+                                <div className={`p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none shadow-md' : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-tl-none shadow-sm'}`}>
                                     {msg.text.split('\n').map((t, i) => <p key={i} className="mb-2 last:mb-0">{t}</p>)}
                                 </div>
                             </div>
                         ))}
-                        {isLoading && <div className="flex gap-1.5 p-4 items-center"><div className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce"></div><div className="w-1 h-1 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div></div>}
+                        {isLoading && (
+                            <div className="flex gap-1.5 p-4 items-center">
+                                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce"></div>
+                                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
+                                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
+                            </div>
+                        )}
+                        {error && (
+                            <div className="bg-rose-500/10 border border-rose-500/20 p-3 rounded-xl text-rose-500 text-xs text-center animate-fade-in mx-4">
+                                {error}
+                            </div>
+                        )}
                         <div ref={chatEndRef} />
                     </main>
+
                     <footer className="p-4 bg-zinc-950 border-t border-zinc-900 shrink-0">
                         <div className="flex gap-2 items-center bg-zinc-900 rounded-2xl p-2 border border-zinc-800 focus-within:border-indigo-500 transition-all">
                             <textarea 
-                                className="flex-grow bg-transparent border-none focus:ring-0 text-sm p-2 h-10 resize-none placeholder-zinc-700" 
+                                className="flex-grow bg-transparent border-none focus:ring-0 text-sm p-2 h-10 resize-none placeholder-zinc-700 text-white" 
                                 placeholder={mission === 'writing' ? "Analyze text..." : "Submit solution..."} 
                                 value={input} 
                                 onChange={(e) => setInput(e.target.value)} 
                                 onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
                             />
-                            <button onClick={handleSend} disabled={isLoading || !input.trim()} className="bg-indigo-600 hover:bg-indigo-700 p-2.5 rounded-xl active:scale-95 shadow-lg">
+                            <button 
+                                onClick={handleSend} 
+                                disabled={isLoading || !input.trim()} 
+                                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 p-2.5 rounded-xl active:scale-95 shadow-lg"
+                            >
                                 <i data-lucide="send" className="w-5 h-5 text-white"></i>
                             </button>
                         </div>
@@ -182,10 +221,9 @@
 
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
+        
+        // Initial icon render
         setTimeout(() => lucide.createIcons(), 500);
     </script>
 </body>
 </html>
-
-```
-
