@@ -1,258 +1,379 @@
-```html
-<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Elite Scholar Mentor</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script src="https://unpkg.com/lucide@latest"></script>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <style>
-        body { background-color: #0c0c0e; color: #e4e4e7; font-family: ui-sans-serif, system-ui, sans-serif; overflow: hidden; -webkit-tap-highlight-color: transparent; }
-        .scroll-hide::-webkit-scrollbar { display: none; }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-        .animate-fade-in { animation: fadeIn 0.4s ease-out forwards; }
-        textarea { caret-color: #6366f1; }
-    </style>
-</head>
-<body>
-    <div id="root"></div>
+import React, { useState, useEffect, useRef } from 'react';
+import { initializeApp } from 'firebase/app';
+import { 
+  getAuth, 
+  signInAnonymously, 
+  onAuthStateChanged, 
+  signInWithCustomToken 
+} from 'firebase/auth';
+import { 
+  getFirestore, 
+  doc, 
+  setDoc, 
+  onSnapshot 
+} from 'firebase/firestore';
+import { 
+  Zap, Mail, BookOpen, Calculator, Send, ShieldCheck, 
+  User, Lock, LayoutDashboard, RotateCcw, 
+  BrainCircuit, ArrowRight, Key, FileText, CheckCircle,
+  MessageSquare, RefreshCw, AlertCircle
+} from 'lucide-react';
 
-    <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+// ==========================================
+// 🔑 PASTE YOUR API KEY HERE
+// ==========================================
+const HARDCODED_API_KEY = "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4"; // Paste your key between the quotes ""
+// ==========================================
 
-        /**
-         * ==========================================
-         * MASTER CONFIG - EDIT THIS ON GITHUB
-         * ==========================================
-         */
-        const MASTER_CONFIG = {
-            // 1. PASTE YOUR API KEY HERE
-            apiKey: "AIzaSyDObztJxTZqj0wNJ12l888rB1L8mAPicu4", 
-            
-            // 2. PRIMARY MODEL (App will auto-try others if this fails)
-            model: "gemini-1.5-flash",
+// --- FIREBASE INITIALIZATION ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'elif-scholar-v1';
 
-            writing: {
-                title: "Wild River (Rodman Philbrick)",
-                prompt: `You are Elif’s Ivy League Writing Coach. 
-                - Focus ONLY on 'Wild River'. 
-                - REJECT answers < 15 words as 'coasting'. 
-                - MANDATORY: Restate the question and provide a 'because' statement.
-                - CODE: Give [ADJECTIVE-ANIMAL-NUMBER] only after a perfect 5-sentence analysis.`
-            },
-            
-            math: {
-                title: "Math Sprint: Fractions & Patterns",
-                prompt: `You are Elif’s Elite Math Sensei. 
-                - Focus: Mixed/Equivalent fractions and Multiplication patterns.
-                - Task: Give 2 multiplication patterns, then 1 fraction comparison.
-                - Rule: Require full steps to be shown.
-                - CODE: Give [MATH-HERO-NUMBER] only after 10 correct answers in a row.`
-            }
-        };
+// --- SUB-COMPONENTS ---
 
-        const App = () => {
-            const [mission, setMission] = useState(null);
-            const [messages, setMessages] = useState([]);
-            const [input, setInput] = useState('');
-            const [isLoading, setIsLoading] = useState(false);
-            const [debugInfo, setDebugInfo] = useState(null);
-            const chatEndRef = useRef(null);
+const MissionStatus = ({ label, value, highlight }) => (
+  <div className={`flex justify-between items-center p-5 rounded-3xl border transition-all ${highlight ? 'bg-indigo-600/10 border-indigo-500/30' : 'bg-slate-950/50 border-white/5'}`}>
+    <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest">{String(label)}</span>
+    <span className={`text-sm font-black italic uppercase tracking-tight ${highlight ? 'text-indigo-400' : 'text-white'}`}>
+      {String(value)}
+    </span>
+  </div>
+);
 
-            useEffect(() => {
-                chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
-            }, [messages, isLoading]);
+const MissionButton = ({ label, icon, onClick, sub, color }) => {
+  const colorMap = {
+    indigo: 'hover:border-indigo-500/50 group-hover:bg-indigo-600 shadow-indigo-500/5',
+    emerald: 'hover:border-emerald-500/50 group-hover:bg-emerald-600 shadow-emerald-500/5',
+    rose: 'hover:border-rose-500/50 group-hover:bg-rose-600 shadow-rose-500/5'
+  };
 
-            const startMission = (type) => {
-                setMission(type);
-                setDebugInfo(null);
-                const welcome = type === 'writing' 
-                    ? `Writing Mission Active: ${MASTER_CONFIG.writing.title}. I have your Secret Code ready. Which chapter did you finish?`
-                    : `Math Mission Active. Ready for your first set of problems?`;
-                setMessages([{ role: 'ai', text: welcome }]);
-                setTimeout(() => lucide.createIcons(), 100);
-            };
+  const activeColorStyle = colorMap[color] || colorMap.indigo;
 
-            const callGemini = async (userMessage) => {
-                const key = (MASTER_CONFIG.apiKey || "").trim();
-                if (!key) throw new Error("MISSING_API_KEY");
+  return (
+    <button 
+      onClick={onClick} 
+      className={`bg-slate-900/40 backdrop-blur-md border border-slate-800 p-8 rounded-[2.5rem] flex justify-between items-center transition-all active:scale-[0.96] text-left w-full group shadow-2xl ${activeColorStyle.split(' ')[0]}`}
+    >
+      <div className="flex items-center gap-6">
+        <div className={`bg-slate-800 p-5 rounded-[1.5rem] text-${color}-400 ${activeColorStyle.split(' ')[1]} group-hover:text-white transition-all shadow-inner`}>
+          {icon}
+        </div>
+        <div>
+          <p className="font-black uppercase text-base italic text-white tracking-tight leading-none mb-1.5">{String(label)}</p>
+          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate max-w-[160px] opacity-60">{String(sub)}</p>
+        </div>
+      </div>
+      <ArrowRight size={24} className="text-slate-800 group-hover:text-white group-hover:translate-x-2 transition-all"/>
+    </button>
+  );
+};
 
-                // We try v1beta first as it supports systemInstruction more reliably
-                const endpoint = "v1beta";
-                
-                // We will try these models in order if one fails
-                const modelsToTry = [MASTER_CONFIG.model, "gemini-1.5-flash-latest", "gemini-pro"];
-                let lastError = "";
+const ParentHub = ({ apiKey, setApiKey, setView, curriculum, ingestTeacherData, isProcessing }) => (
+  <div className="max-w-4xl mx-auto p-8 space-y-10 animate-in fade-in duration-500 overflow-y-auto h-screen scroll-hide">
+    <header className="flex justify-between items-center">
+      <div>
+        <h1 className="text-4xl font-black italic uppercase tracking-tighter text-white">Parent Hub</h1>
+        <p className="text-[10px] text-indigo-400 font-black uppercase tracking-[0.3em] mt-1">Global Curriculum Sync</p>
+      </div>
+      <div className="flex gap-4">
+        <div className="bg-slate-900 p-3 rounded-2xl border border-slate-800 flex items-center gap-3">
+          <Key size={14} className="text-slate-500" />
+          <input 
+            type="password" 
+            value={apiKey} 
+            onChange={(e) => setApiKey(e.target.value)} 
+            placeholder="API KEY" 
+            className="bg-transparent text-xs outline-none w-32 focus:w-48 transition-all text-white font-mono"
+          />
+        </div>
+        <button onClick={() => setView('student')} className="bg-indigo-600 px-6 py-3 rounded-2xl text-[10px] font-black uppercase shadow-xl hover:bg-indigo-500 active:scale-95 transition-all">Student View</button>
+      </div>
+    </header>
 
-                for (let modelName of modelsToTry) {
-                    try {
-                        const url = `https://generativelanguage.googleapis.com/${endpoint}/models/${modelName}:generateContent?key=${key}`;
-                        
-                        const contents = [
-                            ...messages.map(m => ({ 
-                                role: m.role === 'ai' ? 'model' : 'user', 
-                                parts: [{ text: m.text }] 
-                            })),
-                            { role: 'user', parts: [{ text: userMessage }] }
-                        ];
+    <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <section className="bg-slate-900/50 border border-slate-800 p-8 rounded-[2.5rem] space-y-6 shadow-2xl">
+        <div className="flex items-center gap-3 text-indigo-400">
+          <FileText size={20} />
+          <h3 className="text-xs font-black uppercase tracking-widest">Feed the Engine</h3>
+        </div>
+        <p className="text-[11px] text-slate-400 leading-relaxed">Paste school emails or DLA debate topics here. The AI will rebuild Elif's daily missions instantly.</p>
+        <textarea 
+          className="w-full h-48 bg-slate-950 border border-slate-800 rounded-3xl p-6 text-xs text-white outline-none focus:border-indigo-500 transition-colors resize-none"
+          placeholder="Paste text source here..."
+          onBlur={(e) => ingestTeacherData(e.target.value)}
+        ></textarea>
+        {isProcessing && <div className="text-indigo-400 text-[10px] font-black animate-pulse flex items-center gap-2"><RotateCcw size={12} className="animate-spin" /> SYNCHRONIZING CLOUD DATA...</div>}
+      </section>
 
-                        const payload = {
-                            contents: contents,
-                            systemInstruction: {
-                                parts: [{ text: MASTER_CONFIG[mission].prompt }]
-                            }
-                        };
+      <section className="bg-slate-900/50 border border-slate-800 p-8 rounded-[2.5rem] space-y-6 shadow-2xl">
+        <div className="flex items-center gap-3 text-emerald-400">
+          <LayoutDashboard size={20} />
+          <h3 className="text-xs font-black uppercase tracking-widest">Cloud Mission Status</h3>
+        </div>
+        <div className="space-y-4">
+          <MissionStatus label="Reading" value={curriculum.reading} />
+          <MissionStatus label="Math" value={curriculum.math} />
+          <MissionStatus label="Active Goal" value={curriculum.activeMission} highlight />
+          <div className="pt-6 border-t border-slate-800 mt-6 flex justify-between items-center text-[10px]">
+            <span className="text-slate-500 font-bold uppercase">Last Live Update</span>
+            <span className="text-indigo-400 font-black">{String(curriculum.lastUpdated)}</span>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+);
 
-                        const response = await fetch(url, {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify(payload)
-                        });
-                        
-                        const data = await response.json();
-                        
-                        if (response.ok) {
-                            return data.candidates[0].content.parts[0].text;
-                        } else {
-                            // If it's a model not found error, we continue to the next model in the loop
-                            if (data.error?.message?.includes('not found')) {
-                                lastError = `Model ${modelName} not found. Trying next...`;
-                                continue;
-                            }
-                            throw new Error(data.error?.message || `Error ${response.status}`);
-                        }
-                    } catch (e) {
-                        lastError = e.message;
-                        if (e.message.includes("MISSING_API_KEY")) throw e;
-                    }
-                }
-                
-                throw new Error(`Connection Failed. Final error: ${lastError}`);
-            };
+const StudentKiosk = ({ curriculum, setView, callTutor, messages, setMessages, input, setInput, isChatLoading, lastCode, chatEndRef }) => {
+  const [localMission, setLocalMission] = useState(null);
 
-            const handleSend = async () => {
-                if (!input.trim() || isLoading) return;
-                const text = input;
-                setInput('');
-                setDebugInfo(null);
-                setMessages(prev => [...prev, { role: 'user', text }]);
-                setIsLoading(true);
+  const handleSendChat = async () => {
+    if (!input.trim() || isChatLoading) return;
+    const text = input;
+    setInput('');
+    setMessages(prev => [...prev, { role: 'user', text: String(text) }]);
+    const res = await callTutor(text, localMission);
+    setMessages(prev => [...prev, { role: 'ai', text: String(res) }]);
+  };
 
-                try {
-                    const res = await callGemini(text);
-                    setMessages(prev => [...prev, { role: 'ai', text: res }]);
-                } catch (e) {
-                    setDebugInfo(e.message);
-                } finally {
-                    setIsLoading(false);
-                    setTimeout(() => lucide.createIcons(), 100);
-                }
-            };
+  if (!localMission) {
+    return (
+      <div className="h-full flex flex-col items-center justify-center p-8 space-y-12 bg-slate-950 text-white text-center">
+         <div className="bg-indigo-600 p-8 rounded-[3rem] shadow-2xl rotate-6 border border-indigo-400/20"><Zap size={64} /></div>
+         <div className="space-y-2">
+           <h2 className="text-5xl font-black italic uppercase tracking-tighter">Elite Scholar</h2>
+           <p className="text-[11px] text-slate-500 font-black uppercase tracking-[0.5em]">Academic Command Center</p>
+         </div>
+         <div className="grid grid-cols-1 gap-6 w-full max-w-sm px-4">
+           <MissionButton label="Writing Quest" icon={<BookOpen size={28}/>} onClick={() => setLocalMission('writing')} sub={curriculum.reading} color="indigo" />
+           <MissionButton label="Math Sprint" icon={<Calculator size={28}/>} onClick={() => setLocalMission('math')} sub={curriculum.math} color="emerald" />
+           <MissionButton label="Debate Prep" icon={<MessageSquare size={28}/>} onClick={() => setLocalMission('debate')} sub={curriculum.debate} color="rose" />
+         </div>
+         <button onClick={() => setView('parent')} className="text-slate-700 text-[10px] font-black uppercase tracking-[0.3em] mt-16 flex items-center gap-3 hover:text-indigo-400 transition-colors py-4 px-8">
+           <Lock size={12} /> Parental Access
+         </button>
+      </div>
+    );
+  }
 
-            if (!mission) {
-                return (
-                    <div className="h-screen bg-black flex items-center justify-center p-6 text-white font-sans animate-fade-in">
-                        <div className="max-w-xs w-full text-center space-y-10">
-                            <div className="bg-indigo-600 w-20 h-20 rounded-3xl shadow-2xl flex items-center justify-center mx-auto mb-6">
-                                <i data-lucide="graduation-cap" className="w-10 h-10"></i>
-                            </div>
-                            <div className="space-y-2">
-                                <h1 className="text-3xl font-black uppercase italic tracking-tighter">Scholar Command</h1>
-                                <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-[0.3em]">Select Daily Quest</p>
-                            </div>
-                            <div className="space-y-4">
-                                <button onClick={() => startMission('writing')} className="w-full bg-zinc-900 p-6 rounded-3xl flex justify-between items-center border border-zinc-800 hover:border-indigo-500 transition-all active:scale-95 group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-zinc-800 p-2 rounded-xl group-hover:bg-indigo-600 transition-colors"><i data-lucide="book-open" className="w-5 h-5"></i></div>
-                                        <div className="text-left"><p className="font-black uppercase text-sm italic">Writing Quest</p></div>
-                                    </div>
-                                    <i data-lucide="chevron-right" className="w-5 h-5 text-zinc-600"></i>
-                                </button>
-                                <button onClick={() => startMission('math')} className="w-full bg-zinc-900 p-6 rounded-3xl flex justify-between items-center border border-zinc-800 hover:border-emerald-500 transition-all active:scale-95 group">
-                                    <div className="flex items-center gap-4">
-                                        <div className="bg-zinc-800 p-2 rounded-xl group-hover:bg-emerald-600 transition-colors"><i data-lucide="calculator" className="w-5 h-5"></i></div>
-                                        <div className="text-left"><p className="font-black uppercase text-sm italic">Math Sprint</p></div>
-                                    </div>
-                                    <i data-lucide="chevron-right" className="w-5 h-5 text-zinc-600"></i>
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                );
-            }
+  return (
+    <div className="h-screen bg-black flex flex-col relative overflow-hidden">
+      <header className="p-6 bg-slate-950/80 backdrop-blur-xl border-b border-slate-900 flex justify-between items-center z-10 shadow-2xl">
+        <button onClick={() => { setLocalMission(null); setMessages([]); }} className="text-slate-500 hover:text-white transition-all p-3">
+          <RotateCcw size={22}/>
+        </button>
+        <div className="text-center">
+          <span className="text-white font-black italic uppercase text-sm tracking-[0.2em]">{String(localMission).toUpperCase()} Mission</span>
+          <div className="flex items-center gap-1.5 justify-center mt-1">
+            <div className="w-1 h-1 bg-emerald-500 rounded-full animate-pulse shadow-[0_0_10px_rgba(16,185,129,0.8)]"></div>
+            <span className="text-[9px] text-emerald-500 font-black uppercase tracking-[0.2em]">Logic Engine Active</span>
+          </div>
+        </div>
+        <div className="w-12"/>
+      </header>
+      
+      <div className="flex-grow overflow-y-auto p-8 space-y-10 scroll-hide bg-[radial-gradient(circle_at_top,_rgba(30,41,59,0.2),_rgba(0,0,0,1))]">
+        {messages.map((m, i) => (
+          <div key={i} className={`flex gap-5 max-w-[92%] ${m.role === 'user' ? 'ml-auto flex-row-reverse' : 'animate-in slide-in-from-left-4 duration-500'}`}>
+            <div className={`w-10 h-10 rounded-2xl flex items-center justify-center shrink-0 shadow-2xl ${m.role === 'ai' ? 'bg-indigo-600 border border-indigo-400/30 shadow-indigo-500/20' : 'bg-slate-800 border border-slate-700'}`}>
+              {m.role === 'ai' ? <ShieldCheck size={20} className="text-white"/> : <User size={20} className="text-white"/>}
+            </div>
+            <div className={`p-6 rounded-[2.5rem] text-[15px] leading-relaxed tracking-tight shadow-2xl ${m.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none border border-indigo-400/20' : 'bg-slate-900/80 backdrop-blur-md border border-slate-800 text-slate-100 rounded-tl-none shadow-lg'}`}>
+              {String(m.text)}
+            </div>
+          </div>
+        ))}
+        {isChatLoading && (
+          <div className="flex gap-2 p-6 justify-center">
+            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce"></div>
+            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce [animation-delay:0.2s]"></div>
+            <div className="w-2 h-2 bg-indigo-500 rounded-full animate-bounce [animation-delay:0.4s]"></div>
+          </div>
+        )}
+        <div ref={chatEndRef} />
+      </div>
 
-            return (
-                <div className="flex flex-col h-screen max-w-md mx-auto border-x border-zinc-900 bg-black animate-fade-in">
-                    <header className="p-4 border-b border-zinc-900 bg-zinc-950 flex justify-between items-center shrink-0">
-                        <button onClick={() => setMission(null)} className="text-zinc-600 hover:text-white p-2"><i data-lucide="rotate-ccw" className="w-5 h-5"></i></button>
-                        <div className="text-center">
-                            <h1 className="text-[10px] font-black uppercase tracking-widest italic">{mission === 'writing' ? 'Writing Mastery' : 'Math Sprint'}</h1>
-                            <span className="text-[8px] text-emerald-500 font-bold uppercase tracking-widest">Engine Active</span>
-                        </div>
-                        <div className="w-10" />
-                    </header>
+      <footer className="p-8 border-t border-slate-900 bg-slate-950/80 backdrop-blur-xl flex flex-col gap-6">
+        <div className="flex gap-4 items-end">
+          <div className="flex-grow bg-slate-900/80 p-3 rounded-[2.5rem] border border-slate-800 focus-within:border-indigo-500/50 transition-all shadow-inner relative group">
+            <textarea 
+              className="w-full bg-transparent p-4 text-sm text-white outline-none resize-none h-16 leading-relaxed" 
+              placeholder="Submit scholarly logic..." 
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSendChat())}
+            />
+          </div>
+          <button 
+            onClick={handleSendChat} 
+            disabled={!input.trim() || isChatLoading}
+            className="bg-indigo-600 p-6 rounded-[2rem] text-white hover:bg-indigo-500 transition-all active:scale-90 disabled:opacity-30 shadow-2xl flex items-center justify-center h-16 w-16"
+          >
+            <Send size={24}/>
+          </button>
+        </div>
+        <div className="flex justify-between items-center px-4">
+           <div className="flex flex-col">
+             <span className="text-[9px] text-slate-600 font-black uppercase tracking-widest italic mb-1">Audit Status</span>
+             <span className="text-sm font-black text-indigo-400 font-mono tracking-tighter">{String(lastCode)}</span>
+           </div>
+           <Lock size={16} className="text-slate-800"/>
+        </div>
+      </footer>
+    </div>
+  );
+};
 
-                    <main className="flex-grow overflow-y-auto p-4 space-y-6 scroll-hide bg-gradient-to-b from-zinc-950 to-black">
-                        {messages.map((msg, idx) => (
-                            <div key={idx} className={`flex gap-3 max-w-[90%] animate-fade-in ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}>
-                                <div className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 mt-1 shadow-lg ${msg.role === 'ai' ? (mission === 'writing' ? 'bg-indigo-600' : 'bg-emerald-600') : 'bg-zinc-800'}`}>
-                                    {msg.role === 'ai' ? <i data-lucide="shield-check" className="w-4 h-4 text-white"></i> : <i data-lucide="user" className="w-4 h-4 text-white"></i>}
-                                </div>
-                                <div className={`p-3 rounded-2xl text-sm leading-relaxed ${msg.role === 'user' ? 'bg-indigo-600 text-white rounded-tr-none shadow-md' : 'bg-zinc-900 border border-zinc-800 text-zinc-200 rounded-tl-none shadow-sm'}`}>
-                                    {msg.text.split('\n').map((t, i) => <p key={i} className="mb-2 last:mb-0">{t}</p>)}
-                                </div>
-                            </div>
-                        ))}
-                        
-                        {isLoading && (
-                            <div className="flex gap-1.5 p-4 items-center">
-                                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce"></div>
-                                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
-                                <div className="w-1.5 h-1.5 bg-indigo-500 rounded-full animate-bounce" style={{animationDelay: '0.4s'}}></div>
-                            </div>
-                        )}
+// --- MAIN APP COMPONENT ---
 
-                        {debugInfo && (
-                            <div className="bg-rose-500/10 border border-rose-500/20 p-4 rounded-xl animate-fade-in mx-2">
-                                <p className="text-[10px] font-black uppercase text-rose-500 mb-1">Engine Error</p>
-                                <p className="text-[11px] text-white font-mono break-words">{debugInfo}</p>
-                            </div>
-                        )}
-                        <div ref={chatEndRef} />
-                    </main>
+const App = () => {
+  const [view, setView] = useState('parent'); 
+  const [user, setUser] = useState(null);
+  // Initialized with hardcoded key if provided above
+  const [apiKey, setApiKey] = useState(HARDCODED_API_KEY || ''); 
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [isChatLoading, setIsChatLoading] = useState(false);
+  
+  const [curriculum, setCurriculum] = useState({
+    reading: "Wild River",
+    math: "Mixed Fractions & Patterns",
+    debate: "DLA Tournament Prep",
+    activeMission: "writing",
+    lastUpdated: "Initializing...",
+    rules: "Require full sentences."
+  });
 
-                    <footer className="p-4 bg-zinc-950 border-t border-zinc-900 shrink-0">
-                        <div className="flex gap-2 items-center bg-zinc-900 rounded-2xl p-2 border border-zinc-800 focus-within:border-indigo-500 transition-all">
-                            <textarea 
-                                className="flex-grow bg-transparent border-none focus:ring-0 text-sm p-2 h-10 resize-none placeholder-zinc-700 text-white" 
-                                placeholder={mission === 'writing' ? "Analyze text..." : "Submit solution..."} 
-                                value={input} 
-                                onChange={(e) => setInput(e.target.value)} 
-                                onKeyDown={(e) => e.key === 'Enter' && !e.shiftKey && (e.preventDefault(), handleSend())}
-                            />
-                            <button 
-                                onClick={handleSend} 
-                                disabled={isLoading || !input.trim()} 
-                                className="bg-indigo-600 hover:bg-indigo-700 disabled:opacity-30 p-2.5 rounded-xl active:scale-95 shadow-lg"
-                            >
-                                <i data-lucide="send" className="w-5 h-5 text-white"></i>
-                            </button>
-                        </div>
-                    </footer>
-                </div>
-            );
-        };
+  const [messages, setMessages] = useState([]);
+  const [input, setInput] = useState('');
+  const [lastCode, setLastCode] = useState('----');
+  const chatEndRef = useRef(null);
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-        
-        setTimeout(() => lucide.createIcons(), 500);
-    </script>
-</body>
-</html>
+  // 1. Auth Initializer
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (err) { console.error("Auth Error:", err); }
+    };
+    initAuth();
+    const unsubscribeAuth = onAuthStateChanged(auth, setUser);
+    return () => unsubscribeAuth();
+  }, []);
 
-```
+  // 2. Cloud Data Sync
+  useEffect(() => {
+    if (!user) return;
+    const curriculumRef = doc(db, 'artifacts', appId, 'public', 'data', 'curriculum', 'latest');
+    const unsubscribe = onSnapshot(curriculumRef, (docSnap) => {
+      if (docSnap.exists()) {
+        const data = docSnap.data();
+        setCurriculum({
+          reading: String(data.reading || "Wild River"),
+          math: String(data.math || "Fractions"),
+          debate: String(data.debate || "Prep"),
+          activeMission: String(data.activeMission || "writing"),
+          lastUpdated: String(data.lastUpdated || "Now"),
+          rules: String(data.rules || "Standard rules")
+        });
+      }
+    }, (error) => console.error("Firestore Sync Error:", error));
+    return () => unsubscribe();
+  }, [user]);
+
+  // --- Parent Logic ---
+  const ingestTeacherData = async (rawText) => {
+    const activeKey = apiKey || (typeof __api_key !== 'undefined' ? __api_key : "");
+    if (!activeKey) return alert("Set Gemini API Key first.");
+    setIsProcessing(true);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`;
+    const systemPrompt = `Analyze school text and extract JSON: {"reading": "", "math": "", "activeMission": "writing|math", "rules": ""}`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: rawText }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: { responseMimeType: "application/json" }
+        })
+      });
+      const data = await response.json();
+      const extracted = JSON.parse(data.candidates[0].content.parts[0].text);
+      const curriculumRef = doc(db, 'artifacts', appId, 'public', 'data', 'curriculum', 'latest');
+      await setDoc(curriculumRef, { ...extracted, lastUpdated: new Date().toLocaleString() });
+      alert("Cloud Mission Synced.");
+    } catch (e) { alert("Sync failed."); }
+    finally { setIsProcessing(false); }
+  };
+
+  // --- Student Logic ---
+  const callTutor = async (userMessage, missionType) => {
+    const activeKey = apiKey || (typeof __api_key !== 'undefined' ? __api_key : "");
+    if (!activeKey) return "API Key missing in Parent Hub.";
+    
+    setIsChatLoading(true);
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${activeKey}`;
+    const prompt = `Act as Elif's Socratic Mentor. Topic: ${missionType === 'writing' ? curriculum.reading : curriculum.math}. Rules: ${curriculum.rules}. Never give answers. Require 15+ words. Provide code [ELITE-${String(missionType).toUpperCase()}-${Math.floor(Math.random()*9000)}] when satisfied.`;
+
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [...messages.map(m => ({ role: m.role === 'ai' ? 'model' : 'user', parts: [{ text: String(m.text) }] })), { role: 'user', parts: [{ text: String(userMessage) }] }],
+          systemInstruction: { parts: [{ text: prompt }] }
+        })
+      });
+      const data = await response.json();
+      const aiText = data.candidates[0].content.parts[0].text;
+      const codeMatch = aiText.match(/ELITE-[A-Z]+-\d+/);
+      if (codeMatch) setLastCode(codeMatch[0]);
+      setIsChatLoading(false);
+      return aiText;
+    } catch (e) { setIsChatLoading(false); return "Connection Error."; }
+  };
+
+  return (
+    <div className="h-screen bg-slate-950 text-slate-100 font-sans selection:bg-indigo-500/30 overflow-hidden">
+      {!user ? (
+        <div className="h-full flex items-center justify-center bg-slate-950">
+          <div className="text-indigo-400 animate-pulse font-black uppercase tracking-[0.4em] text-sm">Securing Secure Bridge...</div>
+        </div>
+      ) : (
+        view === 'parent' ? (
+          <ParentHub 
+            apiKey={apiKey} 
+            setApiKey={setApiKey} 
+            setView={setView} 
+            curriculum={curriculum} 
+            ingestTeacherData={ingestTeacherData} 
+            isProcessing={isProcessing} 
+          />
+        ) : (
+          <StudentKiosk 
+            curriculum={curriculum} 
+            setView={setView} 
+            callTutor={callTutor}
+            messages={messages}
+            setMessages={setMessages}
+            input={input}
+            setInput={setInput}
+            isChatLoading={isChatLoading}
+            lastCode={lastCode}
+            chatEndRef={chatEndRef}
+          />
+        )
+      )}
+    </div>
+  );
+};
+
+export default App;
